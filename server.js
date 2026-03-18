@@ -1,6 +1,13 @@
 /**
- * server.js — Quokka Agency Main Server (6-Agent Edition)
- * Express app at port 3888. Orchestrates Nova + 5 specialist agents.
+ * server.js — Quokka Agency Main Server (6-Agent, hardened v2)
+ *
+ * 핵심 수정:
+ *  1. ERR_STREAM_WRITE_AFTER_END 완전 수정
+ *     - req.on('close')에서 res.end() 직접 호출 제거 → _sseEnded 플래그로 감지
+ *     - finally 블록에서 closeSSE 1회만 호출, 이중 호출 시 무시
+ *  2. 다운 에이전트 자동 제외 + 살아있는 에이전트에만 업무 재분배
+ *     - preflight의 recommendedAgents를 사용해 decompose() 호출
+ *  3. aggregate()에 5명 결과 전체 전달
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -10,17 +17,28 @@ const cors = require('cors');
 
 const { decompose, aggregate } = require('./agents/orchestrator');
 const { research } = require('./agents/researcher');
-const { reason } = require('./agents/dex');
-const { code } = require('./agents/coder');
-const { write } = require('./agents/mia');
-const { review } = require('./agents/rex');
+const { reason }   = require('./agents/dex');
+const { code }     = require('./agents/coder');
+const { write }    = require('./agents/mia');
+const { review }   = require('./agents/rex');
 const { initSSE, sendEvent, closeSSE } = require('./stream');
 const { getHealthSummary } = require('./model-router');
 const { startDaemon } = require('./health');
 const { startDiscovery } = require('./discovery');
+const { runPreflight, initPreflight } = require('./preflight');
 
-const app = express();
-const PORT = process.env.PORT || 3888;
+const app     = express();
+const PORT    = process.env.PORT || 3888;
+const ROOT_DIR = __dirname;
+
+const AGENT_FNS = { kira: research, dex: reason, max: code, mia: write, rex: review };
+const AGENT_LABELS = {
+  kira: '리서치 시작! 🔬',
+  dex:  '추론 시작! 🧠',
+  max:  '코딩 시작! 💻',
+  mia:  '작성 시작! ✍️',
+  rex:  '리뷰 시작! 🔍',
+};
 
 app.use(cors());
 app.use(express.json());
@@ -39,18 +57,46 @@ app.post('/api/task', async (req, res) => {
   }
 
   initSSE(res);
-  req.on('close', () => { try { res.end(); } catch(e) {} });
+  // 가드 플래그만 설정 (직접 res.end() 호출 안 함 → finally의 closeSSE가 담당)
+  req.on('close', () => { res._sseEnded = true; });
 
   try {
-    // ── Step 1: Nova decomposes ─────────────────────────────────────────────
-    sendEvent(res, { type: 'status', agent: 'nova', status: 'thinking',
-      message: '팀원들에게 업무를 분배하고 있어요... 🤔' });
+    // ── Pre-flight ──────────────────────────────────────────────────────
+    sendEvent(res, { type: 'preflight', phase: 'start', message: '🔍 선행 검사 중...' });
+    const pf = runPreflight(goal, ROOT_DIR);
+    sendEvent(res, { type: 'preflight', phase: 'result', ...pf });
 
-    const orchestration = await decompose(goal);
+    if (pf.blocked) {
+      sendEvent(res, { type: 'error', message: `🚨 보안 차단: HIGH ${pf.security.highCount}건. node cli/security-scan.js 쪽인.` });
+      return;
+    }
+
+    // ── 사용 가능한 에이전트 결정 ───────────────────────────────────────────
+    const ALL_AGENTS = ['kira', 'dex', 'max', 'mia', 'rex'];
+    const ROLE_AGENT = { researcher: 'kira', reasoner: 'dex', coder: 'max', writer: 'mia', reviewer: 'rex' };
+    const downRoles = new Set(pf.health.down.map(d => d.role));
+    const availableAgents = ALL_AGENTS.filter(id => {
+      const role = Object.entries(ROLE_AGENT).find(([, a]) => a === id)?.[0];
+      return !downRoles.has(role);
+    });
+
+    if (availableAgents.length === 0) {
+      sendEvent(res, { type: 'error', message: '❌ 모든 에이전트 다운 — 잠시 후 다시 시도해주세요.' });
+      return;
+    }
+
+    ALL_AGENTS.filter(id => !availableAgents.includes(id)).forEach(id => {
+      sendEvent(res, { type: 'status', agent: id, status: 'skipped', message: '⚫ 모델 다운 — 건너뜁기' });
+    });
+
+    // ── Nova 업무 분배 ─────────────────────────────────────────────────────
+    sendEvent(res, { type: 'status', agent: 'nova', status: 'thinking',
+      message: `팀원 ${availableAgents.length}명에게 업무를 분배하고 있어요... 🤔` });
+
+    const orchestration = await decompose(goal, availableAgents);
 
     sendEvent(res, {
-      type: 'orchestrate',
-      agent: 'nova',
+      type: 'orchestrate', agent: 'nova',
       message: orchestration.greeting,
       analysis: orchestration.analysis,
       tasks: orchestration.tasks,
@@ -58,92 +104,78 @@ app.post('/api/task', async (req, res) => {
       fallback: orchestration.fallback,
     });
 
-    // ── Step 2: Announce workers ────────────────────────────────────────────
-    const getTask = (agentId) =>
-      orchestration.tasks.find(t => t.agent === agentId)?.task || goal;
+    const taskMap = {};
+    orchestration.tasks.forEach(t => { taskMap[t.agent] = t.task; });
 
-    ['kira','dex','max','mia','rex'].forEach((id, i) => {
-      const labels = ['리서치 시작! 🔬', '추론 시작! 🧠', '코딩 시작! 💻', '작성 시작! ✍️', '리뷰 시작! 🔍'];
-      sendEvent(res, { type: 'status', agent: id, status: 'working',
-        message: `"${getTask(id).slice(0, 50)}..." ${labels[i]}` });
+    availableAgents.forEach(id => {
+      sendEvent(res, {
+        type: 'status', agent: id, status: 'working',
+        message: `"${(taskMap[id] || goal).slice(0, 60)}..." ${AGENT_LABELS[id]}`,
+      });
     });
 
-    // ── Step 3: Run all 5 agents in PARALLEL (fault-tolerant) ──────────────
-    const results = { kira: '', dex: '', max: '', mia: '', rex: '' };
+    // ── 살아있는 에이전트만 병렬 실행 (fault-tolerant) ─────────────────
+    const results = {};
+    availableAgents.forEach(id => { results[id] = ''; });
 
-    const settled = await Promise.allSettled([
-      research(getTask('kira'), (chunk) => { results.kira += chunk; sendEvent(res, { type: 'stream', agent: 'kira', chunk }); }),
-      reason (getTask('dex'),  (chunk) => { results.dex  += chunk; sendEvent(res, { type: 'stream', agent: 'dex',  chunk }); }),
-      code   (getTask('max'),  (chunk) => { results.max  += chunk; sendEvent(res, { type: 'stream', agent: 'max',  chunk }); }),
-      write  (getTask('mia'),  (chunk) => { results.mia  += chunk; sendEvent(res, { type: 'stream', agent: 'mia',  chunk }); }),
-      review (getTask('rex'),  (chunk) => { results.rex  += chunk; sendEvent(res, { type: 'stream', agent: 'rex',  chunk }); }),
-    ]);
-
-    const agentIds = ['kira', 'dex', 'max', 'mia', 'rex'];
-    const agentData = settled.map((result, i) => {
-      const id = agentIds[i];
-      if (result.status === 'fulfilled') {
-        return { id, data: result.value };
-      } else {
-        const errMsg = `⚠️ ${id.toUpperCase()} 에이전트 오류: ${result.reason?.message || '알 수 없는 오류'}`;
-        sendEvent(res, { type: 'stream', agent: id, chunk: errMsg });
-        console.error(`[server] Agent ${id} failed:`, result.reason?.message);
-        return { id, data: { text: errMsg, modelUsed: 'N/A', fallback: true, error: true } };
-      }
+    const agentPromises = availableAgents.map(id => {
+      const fn   = AGENT_FNS[id];
+      const task = taskMap[id] || goal;
+      return fn(task, (chunk) => {
+        results[id] += chunk;
+        sendEvent(res, { type: 'stream', agent: id, chunk });
+      }).then(data => ({ id, data, status: 'fulfilled' }))
+        .catch(err => {
+          const errMsg = `⚠️ ${id.toUpperCase()} 오류: ${err?.message || '알 수 없는 오류'}`;
+          sendEvent(res, { type: 'stream', agent: id, chunk: errMsg });
+          console.error(`[server] Agent ${id} failed:`, err?.message);
+          return { id, data: { text: errMsg, modelUsed: 'N/A', fallback: true, error: true }, status: 'rejected' };
+        });
     });
+
+    const agentData = await Promise.all(agentPromises);
 
     agentData.forEach(({ id, data }) => {
       sendEvent(res, {
         type: data.error ? 'error_partial' : 'complete',
-        agent: id,
-        modelUsed: data.modelUsed,
-        fallback: data.fallback,
-        error: data.error || false,
+        agent: id, modelUsed: data.modelUsed, fallback: data.fallback, error: data.error || false,
       });
     });
 
-    const [kiraData, dexData, maxData, miaData, rexData] = agentData.map(a => a.data);
-
-    // ── Step 4: Nova aggregates ─────────────────────────────────────────────
+    // ── Nova 최종 취합 ─────────────────────────────────────────────────────
     sendEvent(res, { type: 'status', agent: 'nova', status: 'aggregating',
-      message: '팀원 5명의 결과를 종합하고 있어요! ✨' });
+      message: `팀원 ${agentData.length}명의 결과를 종합하고 있어요! ✨` });
 
-    const combinedResults = [
-      `## Kira (분석가)\n${kiraData.text || results.kira}`,
-      `## Dex (딥 리즈너)\n${dexData.text || results.dex}`,
-      `## Max (코더)\n${maxData.text || results.max}`,
-      `## Mia (작가)\n${miaData.text || results.mia}`,
-      `## Rex (리뷰어)\n${rexData.text || results.rex}`,
-    ].join('\n\n---\n\n');
+    const agentResults = agentData.map(({ id, data }) => ({
+      agent: id,
+      text: data.text || results[id] || '(출력 없음)',
+    }));
 
     const finalResult = await aggregate(
-      goal,
-      combinedResults,
-      '',
+      goal, agentResults, '',
       (chunk) => sendEvent(res, { type: 'stream', agent: 'nova_final', chunk }),
     );
 
     sendEvent(res, {
-      type: 'final',
-      agent: 'nova',
-      message: '모든 팀원의 작업이 완료됐어요! 🎉 퀴카팀 최고!',
-      modelUsed: finalResult.modelUsed,
-      fallback: finalResult.fallback,
+      type: 'final', agent: 'nova',
+      message: '모든 팀원의 작업이 완료덴어요! 🎉 퀴카팀 최고!',
+      modelUsed: finalResult.modelUsed, fallback: finalResult.fallback,
     });
 
   } catch (err) {
     console.error('[server] Task error:', err.message);
-    sendEvent(res, { type: 'error', message: err.message });
+    sendEvent(res, { type: 'error', message: `⚠️ 처리 중 오류: ${err.message}` });
   } finally {
-    closeSSE(res);
+    closeSSE(res); // _sseEnded 가드로 이중 호출 안전
   }
 });
 
 // ─── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🐨 Quokka Agency [6-Agent] is running!`);
+  console.log(`\n🐨 Quokka Agency [6-Agent Hardened] running!`);
   console.log(`   → http://localhost:${PORT}`);
   console.log(`   API Key: ${process.env.NVIDIA_API_KEY ? '✅ loaded' : '❌ MISSING'}\n`);
   startDaemon();
   startDiscovery();
+  initPreflight(ROOT_DIR);
 });
