@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🐨 Quokka Agency — AI 협업 팀</title>
+  <meta name="description" content="Nova가 이끄는 6인 AI 팀 협업 플랫폼">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-brand">
+        <span class="header-emoji">🐨</span>
+        <div>
+          <h1 class="header-title">Quokka Agency</h1>
+          <p class="header-sub">Nova 팀장 + 전문가 5인 병렬 AI 협업</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="health-dots" id="healthDots"></div>
+        <button class="btn-cli" onclick="openCLIModal()">⚙️ 모델 관리</button>
+      </div>
+    </header>
+
+    <!-- Nova Lead -->
+    <section class="lead-section">
+      <div class="agent-card lead-card" id="card-nova">
+        <div class="agent-header">
+          <div class="agent-avatar lead-avatar">🐨</div>
+          <div class="agent-info">
+            <div class="agent-name">Nova</div>
+            <div class="agent-role">팀장 · 오케스트레이터</div>
+          </div>
+          <div class="agent-badge" id="badge-nova">
+            <span class="dot dot-idle"></span>
+            <span class="badge-model" id="model-nova">nemotron-49b</span>
+          </div>
+        </div>
+        <div class="agent-bubble" id="bubble-nova"><p>안녕하세요! 저는 Nova예요. 목표를 주시만 팀원들에게 업무를 분배할게요 🚀</p></div>
+        <div class="agent-status" id="status-nova">대기 중</div>
+      </div>
+    </section>
+
+    <!-- 5 Workers Grid -->
+    <section class="workers-grid">
+      <!-- Kira -->
+      <div class="agent-card" id="card-kira">
+        <div class="agent-header">
+          <div class="agent-avatar" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">🔬</div>
+          <div class="agent-info"><div class="agent-name">Kira</div><div class="agent-role">분석가</div></div>
+          <div class="agent-badge" id="badge-kira"><span class="dot dot-idle"></span><span class="badge-model" id="model-kira">nemotron-120b</span></div>
+        </div>
+        <div class="agent-bubble" id="bubble-kira"><p>리서치 준비완료 🔬</p></div>
+        <div class="agent-output markdown-body" id="output-kira"></div>
+        <div class="agent-status" id="status-kira">대기 중</div>
+      </div>
+      <!-- Dex -->
+      <div class="agent-card" id="card-dex">
+        <div class="agent-header">
+          <div class="agent-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706)">🧠</div>
+          <div class="agent-info"><div class="agent-name">Dex</div><div class="agent-role">딥 리즈너</div></div>
+          <div class="agent-badge" id="badge-dex"><span class="dot dot-idle"></span><span class="badge-model" id="model-dex">deepseek-v3.2</span></div>
+        </div>
+        <div class="agent-bubble" id="bubble-dex"><p>논리 분석 준비완료 🧠</p></div>
+        <div class="agent-output markdown-body" id="output-dex"></div>
+        <div class="agent-status" id="status-dex">대기 중</div>
+      </div>
+      <!-- Max -->
+      <div class="agent-card" id="card-max">
+        <div class="agent-header">
+          <div class="agent-avatar" style="background:linear-gradient(135deg,#10b981,#059669)">💻</div>
+          <div class="agent-info"><div class="agent-name">Max</div><div class="agent-role">코더</div></div>
+          <div class="agent-badge" id="badge-max"><span class="dot dot-idle"></span><span class="badge-model" id="model-max">qwen3.5-122b</span></div>
+        </div>
+        <div class="agent-bubble" id="bubble-max"><p>코딩 준비완료 💻</p></div>
+        <div class="agent-output markdown-body" id="output-max"></div>
+        <div class="agent-status" id="status-max">대기 중</div>
+      </div>
+      <!-- Mia -->
+      <div class="agent-card" id="card-mia">
+        <div class="agent-header">
+          <div class="agent-avatar" style="background:linear-gradient(135deg,#ec4899,#db2777)">✍️</div>
+          <div class="agent-info"><div class="agent-name">Mia</div><div class="agent-role">작가/전략가</div></div>
+          <div class="agent-badge" id="badge-mia"><span class="dot dot-idle"></span><span class="badge-model" id="model-mia">mistral-large-3</span></div>
+        </div>
+        <div class="agent-bubble" id="bubble-mia"><p>전략 수립 준비완료 ✍️</p></div>
+        <div class="agent-output markdown-body" id="output-mia"></div>
+        <div class="agent-status" id="status-mia">대기 중</div>
+      </div>
+      <!-- Rex -->
+      <div class="agent-card" id="card-rex">
+        <div class="agent-header">
+          <div class="agent-avatar" style="background:linear-gradient(135deg,#6366f1,#4f46e5)">🔍</div>
+          <div class="agent-info"><div class="agent-name">Rex</div><div class="agent-role">QA/리뷰어</div></div>
+          <div class="agent-badge" id="badge-rex"><span class="dot dot-idle"></span><span class="badge-model" id="model-rex">nemotron-253b</span></div>
+        </div>
+        <div class="agent-bubble" id="bubble-rex"><p>품질 검증 준비완료 🔍</p></div>
+        <div class="agent-output markdown-body" id="output-rex"></div>
+        <div class="agent-status" id="status-rex">대기 중</div>
+      </div>
+    </section>
+
+    <!-- Final Result -->
+    <section class="result-section" id="resultSection" style="display:none">
+      <div class="result-header">
+        <span>🐨 Nova의 최종 보고서</span>
+        <button class="btn-copy" onclick="copyResult()">📋 복사</button>
+      </div>
+      <div class="result-body markdown-body" id="finalResult"></div>
+    </section>
+
+    <!-- Input -->
+    <section class="input-section">
+      <div class="input-box">
+        <textarea id="goalInput" class="goal-input" placeholder="Nova 팀장에게 목표를 전달하세요... (예: Python으로 REST API 서버 만들기)" rows="2"></textarea>
+        <button class="btn-go" id="goBtn" onclick="submitGoal()">GO! 🚀</button>
+      </div>
+      <div class="input-hint">Enter &rarr; 전송 &nbsp;|&nbsp; Shift+Enter &rarr; 줄바꿈</div>
+    </section>
+
+    <!-- Log -->
+    <section class="log-section">
+      <div class="log-header">📋 작업 기록</div>
+      <div class="log-body" id="taskLog"></div>
+    </section>
+  </div>
+
+  <!-- CLI Modal -->
+  <div class="modal-overlay" id="cliModal" style="display:none" onclick="closeCLIModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span>⚙️ 모델 관리 CLI</span>
+        <button class="modal-close" onclick="document.getElementById('cliModal').style.display='none'">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">터미널에서 <code>node cli/manage-models.js</code>를 실행하세요</p>
+        <div class="cli-commands">
+          <div class="cli-cmd" onclick="copyCmd(this)"><code>node cli/manage-models.js list</code><span>현재 모델 현황</span></div>
+          <div class="cli-cmd" onclick="copyCmd(this)"><code>node cli/manage-models.js health</code><span>모든 모델 상태 확인</span></div>
+          <div class="cli-cmd" onclick="copyCmd(this)"><code>node cli/manage-models.js set coder qwen/qwen3.5-122b-a10b</code><span>코더 1순위 모델 변경</span></div>
+          <div class="cli-cmd" onclick="copyCmd(this)"><code>node cli/manage-models.js discover</code><span>NVIDIA NIM 신규 모델 탐색</span></div>
+          <div class="cli-cmd" onclick="copyCmd(this)"><code>node cli/manage-models.js backup</code><span>현재 설정 백업</span></div>
+          <div class="cli-cmd" onclick="copyCmd(this)"><code>node cli/manage-models.js restore</code><span>이전 설정 복원</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
