@@ -1,0 +1,37 @@
+{
+  "orchestrator": [
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3-super-120b-a12b"
+  ],
+  "aggregator": [
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1"
+  ],
+  "researcher": [
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/nemotron-3-nano-30b-a3b"
+  ],
+  "reasoner": [
+    "deepseek-ai/deepseek-v3.2",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/nemotron-3-super-120b-a12b"
+  ],
+  "coder": [
+    "qwen/qwen3.5-122b-a10b",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/nemotron-3-nano-30b-a3b"
+  ],
+  "writer": [
+    "mistralai/mistral-large-3-675b-instruct-2512",
+    "qwen/qwen3.5-122b-a10b",
+    "nvidia/nemotron-3-super-120b-a12b"
+  ],
+  "reviewer": [
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  ]
+}
